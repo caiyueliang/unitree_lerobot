@@ -33,7 +33,7 @@ def replay_main(cfg: EvalRealConfig):
     if cfg.visualization:
         rerun_logger = RerunLogger()
 
-    image_info = setup_image_client(cfg)
+    image_info = setup_image_client(cfg) if cfg.visualization else None
     robot_interface = setup_robot_interface(cfg)
 
     """The main control and evaluation loop."""
@@ -41,17 +41,18 @@ def replay_main(cfg: EvalRealConfig):
     arm_ctrl, arm_ik, ee_shared_mem, arm_dof, ee_dof = (
         robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
     )
-    tv_img_array, wrist_img_array, tv_img_shape, wrist_img_shape, is_binocular, has_wrist_cam = (
-        image_info[key]
-        for key in [
-            "tv_img_array",
-            "wrist_img_array",
-            "tv_img_shape",
-            "wrist_img_shape",
-            "is_binocular",
-            "has_wrist_cam",
-        ]
-    )
+    if cfg.visualization:
+        tv_img_array, wrist_img_array, tv_img_shape, wrist_img_shape, is_binocular, has_wrist_cam = (
+            image_info[key]
+            for key in [
+                "tv_img_array",
+                "wrist_img_array",
+                "tv_img_shape",
+                "wrist_img_shape",
+                "is_binocular",
+                "has_wrist_cam",
+            ]
+        )
 
     logger_mp.info(f"Starting evaluation loop at {cfg.frequency} Hz.")
 
@@ -111,7 +112,8 @@ def replay_main(cfg: EvalRealConfig):
             # Maintain frequency
             time.sleep(max(0, (1.0 / cfg.frequency) - (time.perf_counter() - loop_start_time)))
 
-    cleanup_resources(image_info)
+    if image_info is not None:
+        cleanup_resources(image_info)
 
 
 if __name__ == "__main__":

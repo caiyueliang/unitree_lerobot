@@ -5,7 +5,7 @@ import argparse
 import threading
 import torch
 import cv2
-from teleimager.image_client import ImageClient
+from unitree_lerobot.eval_robot.image_server.image_client import ImageClient
 from unitree_lerobot.eval_robot.robot_control.robot_arm import (
     G1_29_ArmController,
     G1_23_ArmController,
@@ -91,8 +91,6 @@ def setup_robot_interface(args: argparse.Namespace) -> dict[str, Any]:
     arm_spec = ARM_CONFIG[args.arm]
     arm_ik = arm_spec["ik_solver"]()
     is_sim = getattr(args, "sim", False)
-    # import ipdb
-    # ipdb.set_trace()
     arm_ctrl = arm_spec["controller"](motion_mode=args.motion, simulation_mode=is_sim)
 
     # ---------- End Effector (optional) ----------
