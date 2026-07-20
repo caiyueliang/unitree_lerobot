@@ -25,6 +25,53 @@ import logging_mp
 logger_mp = logging_mp.getLogger(__name__)
 logger_mp.setLevel(logging_mp.INFO)
 
+ACTION_COLUMN_ORDER = {
+    "dex1": ["action.left_gripper", "action.right_gripper"],
+    "dex3": ["action.left_hand", "action.right_hand"],
+    "inspire1": ["action.left_hand", "action.right_hand"],
+    "brainco": ["action.left_hand", "action.right_hand"],
+}
+
+
+def _to_numpy_1d(value):
+    if hasattr(value, "detach"):
+        value = value.detach().cpu().numpy()
+    return np.asarray(value, dtype=np.float32).reshape(-1)
+
+
+def _concat_row_columns(row, keys):
+    return np.concatenate([_to_numpy_1d(row[key]) for key in keys])
+
+
+def _resolve_action_keys(dataset, ee):
+    columns = set(dataset.hf_dataset.column_names)
+    if "action" in columns:
+        return ["action"]
+
+    keys = ["action.left_arm", "action.right_arm"]
+    if ee:
+        keys.extend(ACTION_COLUMN_ORDER.get(ee.lower(), []))
+
+    missing = [key for key in keys if key not in columns]
+    if missing:
+        action_columns = [key for key in dataset.hf_dataset.column_names if key.startswith("action.")]
+        raise ValueError(
+            f"Missing replay action columns {missing}. Available action columns: {action_columns}"
+        )
+    return keys
+
+
+def _get_action(row, action_keys):
+    if action_keys == ["action"]:
+        return _to_numpy_1d(row["action"])
+    return _concat_row_columns(row, action_keys)
+
+
+def _get_initial_arm_pose(step):
+    if "observation.state" in step:
+        return _to_numpy_1d(step["observation.state"])[:14]
+    return _concat_row_columns(step, ["observation.state.left_arm", "observation.state.right_arm"])
+
 
 @parser.wrap()
 def replay_main(cfg: EvalRealConfig):
@@ -57,12 +104,13 @@ def replay_main(cfg: EvalRealConfig):
     logger_mp.info(f"Starting evaluation loop at {cfg.frequency} Hz.")
 
     dataset = LeRobotDataset(repo_id=cfg.repo_id, root=cfg.root, episodes=[cfg.episodes])
-    actions = dataset.hf_dataset.select_columns("action")
+    action_keys = _resolve_action_keys(dataset, cfg.ee)
+    actions = dataset.hf_dataset.select_columns(action_keys)
 
     # init pose
     from_idx = dataset.meta.episodes["dataset_from_index"][0]
     step = dataset[from_idx]
-    init_left_arm_pose = step["observation.state"][:14].cpu().numpy()
+    init_left_arm_pose = _get_initial_arm_pose(step)
 
     user_input = input("Please enter the start signal (enter 's' to start the subsequent program):")
     if user_input.lower() == "s":
@@ -75,7 +123,7 @@ def replay_main(cfg: EvalRealConfig):
             loop_start_time = time.perf_counter()
 
             left_ee_state = right_ee_state = np.array([])
-            action_np = actions[idx]["action"].numpy()
+            action_np = _get_action(actions[idx], action_keys)
 
             # exec action
             arm_action = action_np[:arm_dof]
