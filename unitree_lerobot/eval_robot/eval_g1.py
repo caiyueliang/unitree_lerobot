@@ -22,6 +22,7 @@ from lerobot.utils.utils import (
 from lerobot.configs import parser
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.policies.pi05.dataset_adapter import adapt_pi05_stats
 from multiprocessing.sharedctypes import SynchronizedArray
 from lerobot.processor.rename_processor import rename_stats
 from lerobot.processor import (
@@ -41,11 +42,67 @@ from unitree_lerobot.eval_robot.utils.utils import (
     EvalRealConfig,
 )
 from unitree_lerobot.eval_robot.utils.rerun_visualizer import RerunLogger, visualization_data
+from unitree_lerobot.eval_robot.task_selection import select_initial_step
 
 import logging_mp
 
 logger_mp = logging_mp.getLogger(__name__)
 logger_mp.setLevel(logging_mp.INFO)
+
+STANDARD_ARM_JOINT_INDICES = (0, 1, 2, 3, 5, 6, 4)
+POLICY_IMAGE_KEY_ALIASES = {
+    "observation.images.head_stereo_left": "observation.images.cam_left_high",
+    "observation.images.head_stereo_right": "observation.images.cam_left_high",
+    "observation.images.wrist_left": "observation.images.cam_left_wrist",
+    "observation.images.wrist_right": "observation.images.cam_right_wrist",
+}
+
+
+def _to_numpy_1d(value):
+    if hasattr(value, "detach"):
+        value = value.detach().cpu().numpy()
+    return np.asarray(value, dtype=np.float32).reshape(-1)
+
+
+def _standardize_split_arm(value):
+    arm = _to_numpy_1d(value)
+    if arm.shape[0] != len(STANDARD_ARM_JOINT_INDICES):
+        raise ValueError(f"Expected split arm state with 7 values, got shape {arm.shape}")
+    return arm[list(STANDARD_ARM_JOINT_INDICES)]
+
+
+def _get_initial_arm_pose(step, arm_dof):
+    """Read the first-frame dual-arm pose from old vector datasets or v3 split datasets."""
+    if "observation.state" in step:
+        return _to_numpy_1d(step["observation.state"])[:arm_dof]
+
+    required_keys = ("observation.state.left_arm", "observation.state.right_arm")
+    missing_keys = [key for key in required_keys if key not in step]
+    if missing_keys:
+        available_state_keys = [key for key in step if key.startswith("observation.state")]
+        raise KeyError(
+            f"Missing initial arm state keys {missing_keys}. Available observation state keys: {available_state_keys}"
+        )
+
+    init_arm_pose = np.concatenate(
+        (
+            _standardize_split_arm(step["observation.state.left_arm"]),
+            _standardize_split_arm(step["observation.state.right_arm"]),
+        )
+    )
+    if init_arm_pose.shape[0] != arm_dof:
+        raise ValueError(f"Expected initial arm pose with {arm_dof} values, got shape {init_arm_pose.shape}")
+    return init_arm_pose
+
+
+def _add_policy_image_aliases(observation, policy):
+    """Expose live camera tensors under the image keys stored in the policy config."""
+    for target_key in policy.config.image_features:
+        if target_key in observation:
+            continue
+        source_key = POLICY_IMAGE_KEY_ALIASES.get(target_key)
+        if source_key in observation and observation[source_key] is not None:
+            observation[target_key] = observation[source_key]
 
 
 def eval_policy(
@@ -85,9 +142,9 @@ def eval_policy(
 
         # 使用数据集第一帧的 observation.state 作为初始双臂姿态参考。
         # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
-        from_idx = dataset.meta.episodes["dataset_from_index"][0]
-        step = dataset[from_idx]
-        init_arm_pose = step["observation.state"][:arm_dof].cpu().numpy()
+        step, policy_task = select_initial_step(dataset, cfg.task)
+        logger_mp.info("Using policy task: %s", policy_task)
+        init_arm_pose = _get_initial_arm_pose(step, arm_dof)
 
         user_input = input("Enter 's' to initialize the robot and start the evaluation: ")
         idx = 0
@@ -116,6 +173,7 @@ def eval_policy(
                     image_config,
                     arm_ctrl,
                 )
+                _add_policy_image_aliases(observation, policy)
                 left_ee_state = right_ee_state = np.array([])
                 if cfg.ee:
                     # 末端执行器控制进程通过共享内存暴露当前状态。
@@ -139,7 +197,7 @@ def eval_policy(
                     preprocessor,
                     postprocessor,
                     policy.config.use_amp,
-                    step["task"],
+                    policy_task,
                     use_dataset=cfg.use_dataset,
                     robot_type=None,
                 )
@@ -147,6 +205,16 @@ def eval_policy(
                 # 3. 执行动作。
                 # 策略输出向量约定：前 arm_dof 维是双臂动作，后面按左右末端执行器各 ee_dof 维排列。
                 arm_action = action_np[:arm_dof]
+
+                if idx % 30 == 0:
+                    max_arm_delta = float(np.max(np.abs(arm_action - current_arm_q)))
+                    logger_mp.info(
+                        "Policy action frame %d: max_arm_delta=%.5f, current_arm_q=%s, arm_action=%s",
+                        idx,
+                        max_arm_delta,
+                        np.array2string(current_arm_q, precision=4, suppress_small=True),
+                        np.array2string(arm_action, precision=4, suppress_small=True),
+                    )
 
                 if cfg.send_real_robot:
                     # send_real_robot 是真实机器人下发总开关；false 时只推理和可视化，不控制机器人。
@@ -210,12 +278,21 @@ def eval_main(cfg: EvalRealConfig):
     policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta)
     policy.eval()
 
+    use_pi05_split_state_action = cfg.policy.type == "pi05" and getattr(
+        cfg.policy, "use_split_state_action", False
+    )
+    dataset_stats = (
+        adapt_pi05_stats(dataset.meta.stats) if use_pi05_split_state_action else dataset.meta.stats
+    )
+    if use_pi05_split_state_action:
+        logging.info("Using PI0.5 split state/action adapted dataset stats for eval.")
+
     # 构建推理前后的处理流水线：
     # preprocessor 负责重命名、搬到 device、归一化等；postprocessor 负责反归一化和动作格式处理。
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=cfg.policy,
         pretrained_path=cfg.policy.pretrained_path,
-        dataset_stats=rename_stats(dataset.meta.stats, cfg.rename_map),
+        dataset_stats=rename_stats(dataset_stats, cfg.rename_map),
         preprocessor_overrides={
             "device_processor": {"device": cfg.policy.device},
             "rename_observations_processor": {"rename_map": cfg.rename_map},

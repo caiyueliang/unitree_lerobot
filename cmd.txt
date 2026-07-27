@@ -1,0 +1,24 @@
+
+      
+conda activate tv_ys
+
+python -m teleimager.image_client --host 192.168.123.164
+        
+
+          
+conda activate unitree_lerobot
+
+cd /home/wair/caiyueliang/unitree_lerobot && \
+PYTHONPATH=/home/wair/caiyueliang/lerobot/src:/home/wair/yangsheng/xr_teleoperate/teleop/teleimager/src:$PYTHONPATH \
+  python unitree_lerobot/eval_robot/eval_g1.py \
+  --policy.path="/home/wair/caiyueliang/ckpt/pretrained_model" \
+  --repo_id="unitreerobotics/G1_Dex1_ArrangeTestTubes" \
+  --root="/data/datasets/G1_Dex1_ArrangeTestTubes" \
+  --episodes=0 \
+  --frequency=30 \
+  --arm=G1_29 \
+  --ee=dex1 \
+  --image_host=192.168.123.164 \
+  --visualization=false \
+  --send_real_robot=true \
+  --motion=true

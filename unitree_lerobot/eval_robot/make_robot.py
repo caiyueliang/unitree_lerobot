@@ -188,8 +188,14 @@ def process_images_and_observations(img_client, camera_config, arm_ctrl):
         if camera_config['head_camera']['enable_zmq']:
             head_img = img_client.get_head_frame()
             if head_img is not None:
-                observation["observation.images.cam_left_high"] = to_tensor_rgb(head_img.bgr[:, :camera_config['head_camera']['image_shape'][1]//2])
-                observation["observation.images.cam_right_high"] = to_tensor_rgb(head_img.bgr[:, camera_config['head_camera']['image_shape'][1]//2:])
+                if camera_config['head_camera'].get('binocular', False):
+                    width = camera_config['head_camera']['image_shape'][1]
+                    observation["observation.images.cam_left_high"] = to_tensor_rgb(head_img.bgr[:, :width//2])
+                    observation["observation.images.cam_right_high"] = to_tensor_rgb(head_img.bgr[:, width//2:])
+                else:
+                    head_tensor = to_tensor_rgb(head_img.bgr)
+                    observation["observation.images.cam_left_high"] = head_tensor
+                    observation["observation.images.cam_right_high"] = head_tensor
             else:
                 logger_mp.warning("Head image is None!")
 
