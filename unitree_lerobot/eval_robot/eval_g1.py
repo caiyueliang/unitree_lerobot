@@ -42,7 +42,7 @@ from unitree_lerobot.eval_robot.utils.utils import (
     EvalRealConfig,
 )
 from unitree_lerobot.eval_robot.utils.rerun_visualizer import RerunLogger, visualization_data
-from unitree_lerobot.eval_robot.task_selection import list_unique_tasks, select_initial_step
+from unitree_lerobot.eval_robot.task_selection import list_unique_tasks
 
 import logging_mp
 
@@ -142,8 +142,11 @@ def eval_policy(
 
         # 使用数据集第一帧的 observation.state 作为初始双臂姿态参考。
         # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
-        step, policy_task = select_initial_step(dataset, cfg.task)
-        logger_mp.info("Using policy task: %s", policy_task)
+        # step, policy_task = select_initial_step(dataset, cfg.task)
+        from_idx = dataset.meta.episodes["dataset_from_index"][0]
+        step = dataset[from_idx]
+        policy_task = step["task"]
+        logger_mp.info("Using first episode policy task: %s", policy_task)
         init_arm_pose = _get_initial_arm_pose(step, arm_dof)
 
         user_input = input("Enter 's' to initialize the robot and start the evaluation: ")
