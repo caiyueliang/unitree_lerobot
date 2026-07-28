@@ -24,6 +24,10 @@ def _episode_tasks(episode: dict[str, Any]) -> list[str]:
     return list(tasks)
 
 
+def list_episode_tasks(episodes: Any) -> list[tuple[int, list[str]]]:
+    return [(index, _episode_tasks(episode)) for index, episode in enumerate(_iter_episode_records(episodes))]
+
+
 def select_initial_step(dataset: Any, task: str | None) -> tuple[dict[str, Any], str]:
     requested_task = (task or "").strip()
     episodes = dataset.meta.episodes

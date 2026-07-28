@@ -1,4 +1,4 @@
-from unitree_lerobot.eval_robot.task_selection import select_initial_step
+from unitree_lerobot.eval_robot.task_selection import list_episode_tasks, select_initial_step
 
 
 class FakeDataset:
@@ -34,3 +34,10 @@ def test_select_initial_step_uses_matching_episode_for_task_override():
 
     assert step == {"task": "sort banana"}
     assert task == "sort banana"
+
+
+def test_list_episode_tasks_returns_tasks_for_each_episode():
+    assert list_episode_tasks(FakeDataset().meta.episodes) == [
+        (0, ["sort apple"]),
+        (1, ["sort banana"]),
+    ]

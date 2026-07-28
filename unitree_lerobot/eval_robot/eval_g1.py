@@ -42,7 +42,7 @@ from unitree_lerobot.eval_robot.utils.utils import (
     EvalRealConfig,
 )
 from unitree_lerobot.eval_robot.utils.rerun_visualizer import RerunLogger, visualization_data
-from unitree_lerobot.eval_robot.task_selection import select_initial_step
+from unitree_lerobot.eval_robot.task_selection import list_episode_tasks, select_initial_step
 
 import logging_mp
 
@@ -273,6 +273,8 @@ def eval_main(cfg: EvalRealConfig):
         dataset_kwargs["root"] = cfg.root
 
     dataset = LeRobotDataset(**dataset_kwargs)
+    for episode_index, tasks in list_episode_tasks(dataset.meta.episodes):
+        logging.info('dataset.meta.episodes[%d]["tasks"]: %s', episode_index, tasks)
 
     # 根据 policy 配置和数据集元信息构建策略模型，并切换到 eval 模式关闭训练行为。
     policy = make_policy(cfg=cfg.policy, ds_meta=dataset.meta)
