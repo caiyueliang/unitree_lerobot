@@ -1,4 +1,4 @@
-from unitree_lerobot.eval_robot.task_selection import list_episode_tasks, select_initial_step
+from unitree_lerobot.eval_robot.task_selection import list_unique_tasks, select_initial_step
 
 
 class FakeDataset:
@@ -10,12 +10,14 @@ class FakeDataset:
                 "episodes": [
                     {"dataset_from_index": 0, "tasks": ["sort apple"]},
                     {"dataset_from_index": 10, "tasks": ["sort banana"]},
+                    {"dataset_from_index": 20, "tasks": ["sort apple", "sort orange"]},
                 ]
             },
         )()
         self.steps = {
             0: {"task": "sort apple"},
             10: {"task": "sort banana"},
+            20: {"task": "sort apple"},
         }
 
     def __getitem__(self, index):
@@ -36,8 +38,9 @@ def test_select_initial_step_uses_matching_episode_for_task_override():
     assert task == "sort banana"
 
 
-def test_list_episode_tasks_returns_tasks_for_each_episode():
-    assert list_episode_tasks(FakeDataset().meta.episodes) == [
-        (0, ["sort apple"]),
-        (1, ["sort banana"]),
+def test_list_unique_tasks_deduplicates_tasks():
+    assert list_unique_tasks(FakeDataset().meta.episodes) == [
+        "sort apple",
+        "sort banana",
+        "sort orange",
     ]

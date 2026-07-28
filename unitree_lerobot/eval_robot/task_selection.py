@@ -24,8 +24,16 @@ def _episode_tasks(episode: dict[str, Any]) -> list[str]:
     return list(tasks)
 
 
-def list_episode_tasks(episodes: Any) -> list[tuple[int, list[str]]]:
-    return [(index, _episode_tasks(episode)) for index, episode in enumerate(_iter_episode_records(episodes))]
+def list_unique_tasks(episodes: Any) -> list[str]:
+    tasks = []
+    seen = set()
+    for episode in _iter_episode_records(episodes):
+        for task in _episode_tasks(episode):
+            if task in seen:
+                continue
+            seen.add(task)
+            tasks.append(task)
+    return tasks
 
 
 def select_initial_step(dataset: Any, task: str | None) -> tuple[dict[str, Any], str]:
