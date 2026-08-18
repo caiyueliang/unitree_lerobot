@@ -133,6 +133,7 @@ class EvalRealConfig:
     send_real_robot: bool = False
     use_dataset: bool = False
     task: str = ""
+    policy_server_uri: str = "ws://127.0.0.1:8765"
 
     rename_map: dict[str, str] = field(default_factory=dict)
 
