@@ -118,6 +118,9 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
         )
 
+        # 使用数据集第一帧的 observation.state 作为初始双臂姿态参考。
+        # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
+        # step, policy_task = select_initial_step(dataset, cfg.task)
         from_idx = dataset.meta.episodes["dataset_from_index"][0]
         step = dataset[from_idx]
         policy_task = cfg.task.strip() or step["task"]
@@ -158,6 +161,7 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
                 task=policy_task,
                 metadata=metadata,
             )
+            # 调用推理服务，获取下一步的动作
             remote_action = remote_policy.get_action(remote_observation)
             robot_action = remote_action_to_robot_action(
                 remote_action,
