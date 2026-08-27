@@ -42,7 +42,7 @@ class FakeImageClient:
 
 
 def fake_cfg(task="cached task"):
-    return SimpleNamespace(visualization=False, task=task, send_real_robot=False, frequency=30.0, arm="G1_29", ee="")
+    return SimpleNamespace(visualization=False, task=task, send_real_robot=False, frequency=30.0, ee="")
 
 
 def fake_robot_interface():
@@ -56,27 +56,15 @@ def fake_robot_interface():
 
 
 class ObsStateCacheTest(unittest.TestCase):
-    def run_client_until_prompt(
-        self,
-        cfg,
-        dataset,
-        remote_policy,
-        obs_state_path,
-        robot_interface_side_effect=None,
-        expect_image_client_closed=True,
-    ):
+    def run_client_until_prompt(self, cfg, dataset, remote_policy, obs_state_path):
         image_client = FakeImageClient()
-        robot_interface_kwargs = (
-            {"side_effect": robot_interface_side_effect}
-            if robot_interface_side_effect is not None
-            else {"return_value": fake_robot_interface()}
-        )
         with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
             eval_g1_client, "setup_image_client", return_value=(image_client, {})
-        ), patch.object(eval_g1_client, "setup_robot_interface", **robot_interface_kwargs), patch("builtins.input", return_value=""):
+        ), patch.object(eval_g1_client, "setup_robot_interface", return_value=fake_robot_interface()), patch(
+            "builtins.input", return_value=""
+        ):
             eval_g1_client.eval_policy_client(cfg, dataset, remote_policy)
-        if expect_image_client_closed:
-            self.assertTrue(image_client.closed)
+        self.assertTrue(image_client.closed)
 
     def test_missing_obs_state_cache_is_saved_from_dataset_first_frame(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -93,27 +81,6 @@ class ObsStateCacheTest(unittest.TestCase):
             self.assertEqual(dataset.read_count, 1)
             self.assertEqual(remote_policy.reset_count, 1)
 
-    def test_missing_obs_state_cache_is_saved_before_robot_interface_initialization(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            obs_state_path = Path(temp_dir) / "obs_state.json"
-            dataset_state = np.arange(20, dtype=np.float32)
-            dataset = FakeDataset({"task": "dataset task", "observation.state": dataset_state})
-            remote_policy = FakeRemotePolicy()
-
-            self.run_client_until_prompt(
-                fake_cfg(),
-                dataset,
-                remote_policy,
-                obs_state_path,
-                robot_interface_side_effect=RuntimeError("robot interface unavailable"),
-            )
-
-            with obs_state_path.open("r", encoding="utf-8") as file:
-                saved = json.load(file)
-            self.assertEqual(saved["observation.state"], np.arange(14, dtype=np.float32).tolist())
-            self.assertEqual(dataset.read_count, 1)
-            self.assertEqual(remote_policy.reset_count, 0)
-
     def test_existing_obs_state_cache_is_used_without_reading_dataset_when_task_is_explicit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             obs_state_path = Path(temp_dir) / "obs_state.json"
@@ -122,12 +89,7 @@ class ObsStateCacheTest(unittest.TestCase):
             dataset = FakeDataset({"task": "dataset task", "observation.state": np.arange(14, dtype=np.float32)})
             remote_policy = FakeRemotePolicy()
 
-            self.run_client_until_prompt(
-                fake_cfg(task="explicit task"),
-                dataset,
-                remote_policy,
-                obs_state_path,
-            )
+            self.run_client_until_prompt(fake_cfg(task="explicit task"), dataset, remote_policy, obs_state_path)
 
             self.assertEqual(dataset.read_count, 0)
             self.assertEqual(remote_policy.reset_count, 1)
@@ -140,13 +102,7 @@ class ObsStateCacheTest(unittest.TestCase):
             dataset = FakeDataset({"task": "dataset task", "observation.state": np.arange(14, dtype=np.float32)})
             remote_policy = FakeRemotePolicy()
 
-            self.run_client_until_prompt(
-                fake_cfg(task="explicit task"),
-                dataset,
-                remote_policy,
-                obs_state_path,
-                expect_image_client_closed=False,
-            )
+            self.run_client_until_prompt(fake_cfg(task="explicit task"), dataset, remote_policy, obs_state_path)
 
             self.assertEqual(dataset.read_count, 0)
             self.assertEqual(remote_policy.reset_count, 0)

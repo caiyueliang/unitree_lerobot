@@ -21,7 +21,6 @@ from unitree_lerobot.eval_robot.eval_g1_client_utils import (
     remote_action_to_robot_action,
 )
 from unitree_lerobot.eval_robot.make_robot import (
-    ARM_CONFIG,
     process_images_and_observations,
     setup_image_client,
     setup_robot_interface,
@@ -115,7 +114,12 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
 
     image_client = None
     try:
-        arm_dof = int(ARM_CONFIG[cfg.arm]["dof"])
+        image_client, image_config = setup_image_client(cfg)
+        robot_interface = setup_robot_interface(cfg)
+
+        arm_ctrl, arm_ik, ee_shared_mem, arm_dof, ee_dof = (
+            robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
+        )
 
         # 优先使用本地缓存的 observation.state；没有缓存时才从数据集第一帧读取并保存。
         # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
@@ -146,15 +150,6 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             with OBS_STATE_PATH.open("w", encoding="utf-8") as file:
                 json.dump({"observation.state": init_arm_pose.tolist()}, file, indent=2)
             logger_mp.info("Saved initial arm pose to %s", OBS_STATE_PATH)
-
-        image_client, image_config = setup_image_client(cfg)
-        robot_interface = setup_robot_interface(cfg)
-
-        arm_ctrl, arm_ik, ee_shared_mem, robot_arm_dof, ee_dof = (
-            robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
-        )
-        if robot_arm_dof != arm_dof:
-            raise ValueError(f"Robot arm DOF mismatch: config={arm_dof}, interface={robot_arm_dof}")
 
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
