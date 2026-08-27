@@ -35,20 +35,12 @@ logger_mp = logging_mp.getLogger(__name__)
 logger_mp.setLevel(logging_mp.INFO)
 
 OBS_STATE_PATH = Path("./obs_state.json")
-STANDARD_ARM_JOINT_INDICES = (0, 1, 2, 3, 5, 6, 4)
 
 
 def _to_numpy_1d(value):
     if hasattr(value, "detach"):
         value = value.detach().cpu().numpy()
     return np.asarray(value, dtype=np.float32).reshape(-1)
-
-
-def _standardize_split_arm(value):
-    arm = _to_numpy_1d(value)
-    if arm.shape[0] != len(STANDARD_ARM_JOINT_INDICES):
-        raise ValueError(f"Expected split arm state with 7 values, got shape {arm.shape}")
-    return arm[list(STANDARD_ARM_JOINT_INDICES)]
 
 
 def _get_initial_arm_pose(step, arm_dof):
@@ -66,8 +58,8 @@ def _get_initial_arm_pose(step, arm_dof):
 
     init_arm_pose = np.concatenate(
         (
-            _standardize_split_arm(step["observation.state.left_arm"]),
-            _standardize_split_arm(step["observation.state.right_arm"]),
+            _to_numpy_1d(step["observation.state.left_arm"]),
+            _to_numpy_1d(step["observation.state.right_arm"]),
         )
     )
     if init_arm_pose.shape[0] != arm_dof:

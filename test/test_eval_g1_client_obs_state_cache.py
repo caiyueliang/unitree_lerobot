@@ -56,6 +56,19 @@ def fake_robot_interface():
 
 
 class ObsStateCacheTest(unittest.TestCase):
+    def test_initial_arm_pose_preserves_split_arm_dataset_order(self):
+        step = {
+            "observation.state.left_arm": np.array([10, 11, 12, 13, 14, 15, 16], dtype=np.float32),
+            "observation.state.right_arm": np.array([20, 21, 22, 23, 24, 25, 26], dtype=np.float32),
+        }
+
+        init_arm_pose = eval_g1_client._get_initial_arm_pose(step, arm_dof=14)
+
+        np.testing.assert_array_equal(
+            init_arm_pose,
+            np.array([10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26], dtype=np.float32),
+        )
+
     def run_client_until_prompt(self, cfg, dataset, remote_policy, obs_state_path):
         image_client = FakeImageClient()
         with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
