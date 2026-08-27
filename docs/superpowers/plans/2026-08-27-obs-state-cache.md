@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cache the first-frame arm pose used by `eval_policy_client` in `/home/unitree/caiyueliang/unitree_lerobot/obs_state.json` and prefer that local cache on later runs.
+**Goal:** Cache the first-frame arm pose used by `eval_policy_client` in `./obs_state.json` relative to the command's working directory and prefer that local cache on later runs.
 
 **Architecture:** Keep the implementation inline in `unitree_lerobot/eval_robot/eval_g1_client.py` as requested. The function will only read the dataset first frame when it needs the task fallback or when the cache file does not exist; invalid cache contents will stop before robot initialization.
 
@@ -153,7 +153,7 @@ from pathlib import Path
 Add near constants:
 
 ```python
-OBS_STATE_PATH = Path("/home/unitree/caiyueliang/unitree_lerobot/obs_state.json")
+OBS_STATE_PATH = Path("./obs_state.json")
 ```
 
 Replace the dataset-first-frame initialization block in `eval_policy_client` with logic that:
@@ -215,6 +215,6 @@ git commit -m "feat: cache eval initial obs state"
 
 ### Self-Review
 
-- Spec coverage: the cache path is fixed to `/home/unitree/caiyueliang/unitree_lerobot/obs_state.json`; existing cache is preferred; missing cache is populated from dataset first frame; unsupported task behavior is not changed.
+- Spec coverage: the cache path is fixed to `./obs_state.json` relative to the command's working directory; existing cache is preferred; missing cache is populated from dataset first frame; unsupported task behavior is not changed.
 - Placeholder scan: no placeholders remain.
 - Type consistency: `observation.state` is represented as a JSON list and converted to a 1-D `np.float32` array before robot initialization.
