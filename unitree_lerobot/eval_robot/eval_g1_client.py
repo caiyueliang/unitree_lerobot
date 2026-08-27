@@ -154,6 +154,16 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
 
+        # # 机器人移动到初始位置
+        # logger_mp.info("Initializing robot to starting pose...")
+        # if cfg.send_real_robot:
+        #     tau = arm_ik.solve_tau(init_arm_pose)
+        #     arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
+        #     time.sleep(1.0)
+        # else:
+        #     logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
+
+        # 输入's'机器人才会开始运动
         user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
         idx = 0
         print(f"user_input: {user_input}")
@@ -161,6 +171,7 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             logger_mp.info("User did not start evaluation.")
             return
 
+        # 机器人移动到初始位置
         logger_mp.info("Initializing robot to starting pose...")
         if cfg.send_real_robot:
             tau = arm_ik.solve_tau(init_arm_pose)
