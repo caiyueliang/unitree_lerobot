@@ -11,6 +11,8 @@ from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_ as go_LowCmd, LowState_ as go_LowState  # idl for h1
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
 
+from unitree_lerobot.eval_robot.robot_control.dds_interface import initialize_dds_channel_factory
+
 import logging_mp
 
 logger_mp = logging_mp.getLogger(__name__)
@@ -89,10 +91,7 @@ class G1_29_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
 
         if self.motion_mode:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Motion, hg_LowCmd)
@@ -380,10 +379,7 @@ class G1_23_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
 
         if self.motion_mode:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Motion, hg_LowCmd)
@@ -662,10 +658,7 @@ class H1_2_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
         self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, hg_LowCmd)
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, hg_LowState)
@@ -938,10 +931,7 @@ class H1_ArmController:
         self._gradual_time = None
 
         # initialize lowcmd publisher and lowstate subscriber
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
         self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, go_LowCmd)
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, go_LowState)

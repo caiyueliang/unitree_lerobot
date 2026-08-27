@@ -13,6 +13,8 @@ import time
 import threading
 from multiprocessing import Process, Value, Array
 
+from unitree_lerobot.eval_robot.robot_control.dds_interface import initialize_dds_channel_factory
+
 import logging_mp
 
 logger_mp = logging_mp.getLogger(__name__)
@@ -56,10 +58,7 @@ class Dex3_1_Controller:
         self.Unit_Test = Unit_Test
         self.simulation_mode = simulation_mode
 
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
 
         # initialize handcmd publisher and handstate subscriber
         self.LeftHandCmb_publisher = ChannelPublisher(kTopicDex3LeftCommand, HandCmd_)
@@ -274,10 +273,7 @@ class Dex1_1_Gripper_Controller:
         self.gripper_sub_ready = False
         self.simulation_mode = simulation_mode
 
-        if self.simulation_mode:
-            ChannelFactoryInitialize(1)
-        else:
-            ChannelFactoryInitialize(0, "enx6c1ff7bccc28")
+        initialize_dds_channel_factory(self.simulation_mode, ChannelFactoryInitialize)
 
         # initialize handcmd publisher and handstate subscriber
         self.LeftGripperCmb_publisher = ChannelPublisher(kTopicGripperLeftCommand, MotorCmds_)
