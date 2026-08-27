@@ -1,9 +1,11 @@
 """Real-robot evaluation client for a remote UniBot VLA policy service."""
 
+import json
 import logging
 import os
 import time
 from dataclasses import asdict
+from pathlib import Path
 from pprint import pformat
 
 import numpy as np
@@ -32,6 +34,7 @@ import logging_mp
 logger_mp = logging_mp.getLogger(__name__)
 logger_mp.setLevel(logging_mp.INFO)
 
+OBS_STATE_PATH = Path("/home/unitree/caiyueliang/unitree_lerobot/obs_state.json")
 STANDARD_ARM_JOINT_INDICES = (0, 1, 2, 3, 5, 6, 4)
 
 
@@ -118,14 +121,35 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
         )
 
-        # 使用数据集第一帧的 observation.state 作为初始双臂姿态参考。
+        # 优先使用本地缓存的 observation.state；没有缓存时才从数据集第一帧读取并保存。
         # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
-        # step, policy_task = select_initial_step(dataset, cfg.task)
-        from_idx = dataset.meta.episodes["dataset_from_index"][0]
-        step = dataset[from_idx]
+        need_dataset_step = not OBS_STATE_PATH.exists() or not cfg.task.strip()
+        step = None
+        if need_dataset_step:
+            from_idx = dataset.meta.episodes["dataset_from_index"][0]
+            step = dataset[from_idx]
+
         policy_task = cfg.task.strip() or step["task"]
         logger_mp.info("Using remote policy task: %s", policy_task)
-        init_arm_pose = _get_initial_arm_pose(step, arm_dof)
+
+        if OBS_STATE_PATH.exists():
+            with OBS_STATE_PATH.open("r", encoding="utf-8") as file:
+                obs_state_data = json.load(file)
+            if "observation.state" not in obs_state_data:
+                raise ValueError(f"{OBS_STATE_PATH} must contain 'observation.state'.")
+            init_arm_pose = np.asarray(obs_state_data["observation.state"], dtype=np.float32).reshape(-1)
+            if init_arm_pose.shape[0] != arm_dof:
+                raise ValueError(
+                    f"{OBS_STATE_PATH} observation.state must contain {arm_dof} values, "
+                    f"got {init_arm_pose.shape[0]}."
+                )
+            logger_mp.info("Loaded initial arm pose from %s", OBS_STATE_PATH)
+        else:
+            init_arm_pose = _get_initial_arm_pose(step, arm_dof)
+            OBS_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with OBS_STATE_PATH.open("w", encoding="utf-8") as file:
+                json.dump({"observation.state": init_arm_pose.tolist()}, file, indent=2)
+            logger_mp.info("Saved initial arm pose to %s", OBS_STATE_PATH)
 
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
