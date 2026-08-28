@@ -69,6 +69,16 @@ def _write_ee_action(ee_shared_mem, left_ee_action: np.ndarray, right_ee_action:
         ee_shared_mem["right"].value = to_scalar(right_ee_action)
 
 
+def initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, send_real_robot, wait_s=1.0):
+    logger_mp.info("Initializing robot to starting pose...")
+    if send_real_robot:
+        tau = arm_ik.solve_tau(init_arm_pose)
+        arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
+        time.sleep(wait_s)
+    else:
+        logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
+
+
 def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
     """Collect live observations, request actions from the remote VLA service, and execute them."""
     logger_mp.info(f"Arguments: {cfg}")
@@ -107,14 +117,8 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
 
-        # # 机器人移动到初始位置
-        # logger_mp.info("Initializing robot to starting pose...")
-        # if cfg.send_real_robot:
-        #     tau = arm_ik.solve_tau(init_arm_pose)
-        #     arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
-        #     time.sleep(1.0)
-        # else:
-        #     logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
+        # 机器人移动到初始位置
+        # initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
 
         # 输入's'机器人才会开始运动
         user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
@@ -125,13 +129,7 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
             return
 
         # 机器人移动到初始位置
-        logger_mp.info("Initializing robot to starting pose...")
-        if cfg.send_real_robot:
-            tau = arm_ik.solve_tau(init_arm_pose)
-            arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
-            time.sleep(1.0)
-        else:
-            logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
+        initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
         while idx < cfg.max_steps:
