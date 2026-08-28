@@ -12,14 +12,33 @@ from unitree_lerobot.eval_robot.utils.utils import EvalRealConfig
 
 
 class FakeRemotePolicy:
-    metadata = {}
+    metadata = {
+        "control_space": "joint",
+        "data_keys": [
+            "observation.language",
+            "observation.state.left_arm",
+            "observation.state.right_arm",
+        ],
+        "obs_chunk_size": 1,
+        "action_chunk_size": 1,
+    }
 
     def __init__(self):
         self.reset_count = 0
+        self.action_count = 0
 
     def reset(self):
         self.reset_count += 1
         return {"ok": True}
+
+    def get_action(self, observation):
+        self.action_count += 1
+        return {
+            "action.left_arm": np.zeros(7, dtype=np.float32),
+            "action.right_arm": np.zeros(7, dtype=np.float32),
+            "action.left_gripper": np.zeros(1, dtype=np.float32),
+            "action.right_gripper": np.zeros(1, dtype=np.float32),
+        }
 
 
 class FakeImageClient:
@@ -30,8 +49,8 @@ class FakeImageClient:
         self.closed = True
 
 
-def fake_cfg(task="cached task"):
-    return SimpleNamespace(visualization=False, task=task, send_real_robot=False, frequency=30.0, ee="")
+def fake_cfg(task="cached task", max_steps=0):
+    return SimpleNamespace(visualization=False, task=task, send_real_robot=False, frequency=30.0, ee="", max_steps=max_steps)
 
 
 def fake_robot_interface():
@@ -121,6 +140,36 @@ class ObsStateCacheTest(unittest.TestCase):
             eval_g1_client.eval_main.__wrapped__(cfg)
 
         eval_policy_client.assert_called_once_with(cfg, remote_policy)
+
+    def test_eval_real_config_defaults_max_steps_to_one_minute_at_30hz(self):
+        cfg = EvalRealConfig(repo_id="", task="explicit task")
+
+        self.assertEqual(cfg.max_steps, 60 * 30)
+
+    def test_remote_eval_loop_stops_after_configured_max_steps(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            obs_state_path.write_text(
+                json.dumps({"observation.state": [float(value) for value in range(14)]}), encoding="utf-8"
+            )
+            remote_policy = FakeRemotePolicy()
+
+            image_client = FakeImageClient()
+            with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
+                eval_g1_client, "setup_image_client", return_value=(image_client, {})
+            ), patch.object(eval_g1_client, "setup_robot_interface", return_value=fake_robot_interface()), patch(
+                "builtins.input", return_value="s"
+            ), patch.object(
+                eval_g1_client,
+                "process_images_and_observations",
+                return_value=({}, np.zeros(14, dtype=np.float32)),
+            ), patch.object(
+                eval_g1_client.time, "sleep"
+            ):
+                eval_g1_client.eval_policy_client(fake_cfg(task="explicit task", max_steps=2), remote_policy)
+
+            self.assertEqual(remote_policy.action_count, 2)
+            self.assertTrue(image_client.closed)
 
 
 if __name__ == "__main__":

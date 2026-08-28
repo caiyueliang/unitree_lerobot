@@ -120,6 +120,7 @@ class EvalRealConfig:
     root: str = ""
     episodes: int = 0
     frequency: float = 30.0
+    max_steps: int = 60 * 30
     image_host: str = "192.168.123.164"
 
     # Basic control parameters
