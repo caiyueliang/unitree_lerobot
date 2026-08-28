@@ -12,7 +12,6 @@ import numpy as np
 from multiprocessing.sharedctypes import SynchronizedArray
 
 from lerobot.configs import parser
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.utils import init_logging
 from policy.web_policy import RemotePolicy
 
@@ -25,7 +24,6 @@ from unitree_lerobot.eval_robot.make_robot import (
     setup_image_client,
     setup_robot_interface,
 )
-from unitree_lerobot.eval_robot.task_selection import list_unique_tasks
 from unitree_lerobot.eval_robot.utils.rerun_visualizer import RerunLogger, visualization_data
 from unitree_lerobot.eval_robot.utils.utils import EvalRealConfig, to_list, to_scalar
 
@@ -37,33 +35,18 @@ logger_mp.setLevel(logging_mp.INFO)
 OBS_STATE_PATH = Path("./obs_state.json")
 
 
-def _to_numpy_1d(value):
-    if hasattr(value, "detach"):
-        value = value.detach().cpu().numpy()
-    return np.asarray(value, dtype=np.float32).reshape(-1)
-
-
-def _get_initial_arm_pose(step, arm_dof):
-    """Read the first-frame dual-arm pose from old vector datasets or v3 split datasets."""
-    if "observation.state" in step:
-        return _to_numpy_1d(step["observation.state"])[:arm_dof]
-
-    required_keys = ("observation.state.left_arm", "observation.state.right_arm")
-    missing_keys = [key for key in required_keys if key not in step]
-    if missing_keys:
-        available_state_keys = [key for key in step if key.startswith("observation.state")]
-        raise KeyError(
-            f"Missing initial arm state keys {missing_keys}. Available observation state keys: {available_state_keys}"
-        )
-
-    init_arm_pose = np.concatenate(
-        (
-            _to_numpy_1d(step["observation.state.left_arm"]),
-            _to_numpy_1d(step["observation.state.right_arm"]),
-        )
-    )
+def _load_initial_arm_pose(arm_dof: int, path: Path = OBS_STATE_PATH) -> np.ndarray:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found. Create it with an 'observation.state' list.")
+    with path.open("r", encoding="utf-8") as file:
+        obs_state_data = json.load(file)
+    if "observation.state" not in obs_state_data:
+        raise ValueError(f"{path} must contain 'observation.state'.")
+    init_arm_pose = np.asarray(obs_state_data["observation.state"], dtype=np.float32).reshape(-1)
     if init_arm_pose.shape[0] != arm_dof:
-        raise ValueError(f"Expected initial arm pose with {arm_dof} values, got shape {init_arm_pose.shape}")
+        raise ValueError(
+            f"{path} observation.state must contain {arm_dof} values, got {init_arm_pose.shape[0]}."
+        )
     return init_arm_pose
 
 
@@ -86,7 +69,7 @@ def _write_ee_action(ee_shared_mem, left_ee_action: np.ndarray, right_ee_action:
         ee_shared_mem["right"].value = to_scalar(right_ee_action)
 
 
-def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_policy: RemotePolicy):
+def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
     """Collect live observations, request actions from the remote VLA service, and execute them."""
     logger_mp.info(f"Arguments: {cfg}")
     metadata = remote_policy.metadata
@@ -113,35 +96,13 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             robot_interface[key] for key in ["arm_ctrl", "arm_ik", "ee_shared_mem", "arm_dof", "ee_dof"]
         )
 
-        # 优先使用本地缓存的 observation.state；没有缓存时才从数据集第一帧读取并保存。
-        # 这样真实机器人开始推理前，会先移动到和数据采集起点相近的位置。
-        need_dataset_step = not OBS_STATE_PATH.exists() or not cfg.task.strip()
-        step = None
-        if need_dataset_step:
-            from_idx = dataset.meta.episodes["dataset_from_index"][0]
-            step = dataset[from_idx]
-
-        policy_task = cfg.task.strip() or step["task"]
+        policy_task = cfg.task.strip()
+        if not policy_task:
+            raise ValueError("--task is required when running eval_g1_client without a dataset.")
         logger_mp.info("Using remote policy task: %s", policy_task)
 
-        if OBS_STATE_PATH.exists():
-            with OBS_STATE_PATH.open("r", encoding="utf-8") as file:
-                obs_state_data = json.load(file)
-            if "observation.state" not in obs_state_data:
-                raise ValueError(f"{OBS_STATE_PATH} must contain 'observation.state'.")
-            init_arm_pose = np.asarray(obs_state_data["observation.state"], dtype=np.float32).reshape(-1)
-            if init_arm_pose.shape[0] != arm_dof:
-                raise ValueError(
-                    f"{OBS_STATE_PATH} observation.state must contain {arm_dof} values, "
-                    f"got {init_arm_pose.shape[0]}."
-                )
-            logger_mp.info("Loaded initial arm pose from %s", OBS_STATE_PATH)
-        else:
-            init_arm_pose = _get_initial_arm_pose(step, arm_dof)
-            OBS_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with OBS_STATE_PATH.open("w", encoding="utf-8") as file:
-                json.dump({"observation.state": init_arm_pose.tolist()}, file, indent=2)
-            logger_mp.info("Saved initial arm pose to %s", OBS_STATE_PATH)
+        init_arm_pose = _load_initial_arm_pose(arm_dof, OBS_STATE_PATH)
+        logger_mp.info("Loaded initial arm pose from %s", OBS_STATE_PATH)
 
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
@@ -173,7 +134,7 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
             logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
-        while True:
+        while idx < cfg.max_steps:
             loop_start_time = time.perf_counter()
             observation, current_arm_q = process_images_and_observations(image_client, image_config, arm_ctrl)
             if current_arm_q is None:
@@ -235,19 +196,12 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
 
 @parser.wrap()
 def eval_main(cfg: EvalRealConfig):
-    """Load dataset metadata, connect to the VLA service, then run real-robot remote evaluation."""
+    """Connect to the VLA service, then run real-robot remote evaluation."""
     logging.info(pformat(asdict(cfg)))
-
-    dataset_kwargs = {"repo_id": cfg.repo_id}
-    if cfg.root:
-        dataset_kwargs["root"] = cfg.root
-    dataset = LeRobotDataset(**dataset_kwargs)
-    unique_tasks = list_unique_tasks(dataset.meta.episodes)
-    logging.warning('Unique dataset.meta.episodes[*]["tasks"] (%d): %s', len(unique_tasks), unique_tasks)
 
     logging.info("Connecting to remote policy server: %s", cfg.policy_server_uri)
     remote_policy = RemotePolicy(host=cfg.policy_server_uri)
-    eval_policy_client(cfg, dataset, remote_policy)
+    eval_policy_client(cfg, remote_policy)
 
     logging.info("End of remote eval")
 

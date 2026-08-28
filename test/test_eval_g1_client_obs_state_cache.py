@@ -3,23 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
 from unitree_lerobot.eval_robot import eval_g1_client
-
-
-class FakeDataset:
-    def __init__(self, step):
-        self.step = step
-        self.read_count = 0
-        self.meta = SimpleNamespace(episodes={"dataset_from_index": [0]})
-
-    def __getitem__(self, index):
-        self.read_count += 1
-        assert index == 0
-        return self.step
+from unitree_lerobot.eval_robot.utils.utils import EvalRealConfig
 
 
 class FakeRemotePolicy:
@@ -46,9 +35,12 @@ def fake_cfg(task="cached task"):
 
 
 def fake_robot_interface():
+    arm_ik = Mock()
+    arm_ik.solve_tau.return_value = np.zeros(14, dtype=np.float32)
+    arm_ctrl = Mock()
     return {
-        "arm_ctrl": object(),
-        "arm_ik": object(),
+        "arm_ctrl": arm_ctrl,
+        "arm_ik": arm_ik,
         "ee_shared_mem": {},
         "arm_dof": 14,
         "ee_dof": 0,
@@ -56,69 +48,79 @@ def fake_robot_interface():
 
 
 class ObsStateCacheTest(unittest.TestCase):
-    def test_initial_arm_pose_preserves_split_arm_dataset_order(self):
-        step = {
-            "observation.state.left_arm": np.array([10, 11, 12, 13, 14, 15, 16], dtype=np.float32),
-            "observation.state.right_arm": np.array([20, 21, 22, 23, 24, 25, 26], dtype=np.float32),
-        }
-
-        init_arm_pose = eval_g1_client._get_initial_arm_pose(step, arm_dof=14)
-
-        np.testing.assert_array_equal(
-            init_arm_pose,
-            np.array([10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26], dtype=np.float32),
-        )
-
-    def run_client_until_prompt(self, cfg, dataset, remote_policy, obs_state_path):
+    def run_client_until_prompt(self, cfg, remote_policy, obs_state_path):
         image_client = FakeImageClient()
         with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
             eval_g1_client, "setup_image_client", return_value=(image_client, {})
         ), patch.object(eval_g1_client, "setup_robot_interface", return_value=fake_robot_interface()), patch(
             "builtins.input", return_value=""
         ):
-            eval_g1_client.eval_policy_client(cfg, dataset, remote_policy)
+            eval_g1_client.eval_policy_client(cfg, remote_policy)
         self.assertTrue(image_client.closed)
 
-    def test_missing_obs_state_cache_is_saved_from_dataset_first_frame(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            obs_state_path = Path(temp_dir) / "obs_state.json"
-            dataset_state = np.arange(20, dtype=np.float32)
-            dataset = FakeDataset({"task": "dataset task", "observation.state": dataset_state})
-            remote_policy = FakeRemotePolicy()
-
-            self.run_client_until_prompt(fake_cfg(), dataset, remote_policy, obs_state_path)
-
-            with obs_state_path.open("r", encoding="utf-8") as file:
-                saved = json.load(file)
-            self.assertEqual(saved["observation.state"], np.arange(14, dtype=np.float32).tolist())
-            self.assertEqual(dataset.read_count, 1)
-            self.assertEqual(remote_policy.reset_count, 1)
-
-    def test_existing_obs_state_cache_is_used_without_reading_dataset_when_task_is_explicit(self):
+    def test_load_initial_arm_pose_reads_local_obs_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             obs_state_path = Path(temp_dir) / "obs_state.json"
             cached_state = [float(value) for value in range(100, 114)]
             obs_state_path.write_text(json.dumps({"observation.state": cached_state}), encoding="utf-8")
-            dataset = FakeDataset({"task": "dataset task", "observation.state": np.arange(14, dtype=np.float32)})
+
+            init_arm_pose = eval_g1_client._load_initial_arm_pose(14, obs_state_path)
+
+            np.testing.assert_array_equal(init_arm_pose, np.asarray(cached_state, dtype=np.float32))
+
+    def test_existing_obs_state_cache_is_used_without_dataset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            cached_state = [float(value) for value in range(100, 114)]
+            obs_state_path.write_text(json.dumps({"observation.state": cached_state}), encoding="utf-8")
             remote_policy = FakeRemotePolicy()
 
-            self.run_client_until_prompt(fake_cfg(task="explicit task"), dataset, remote_policy, obs_state_path)
+            self.run_client_until_prompt(fake_cfg(task="explicit task"), remote_policy, obs_state_path)
 
-            self.assertEqual(dataset.read_count, 0)
             self.assertEqual(remote_policy.reset_count, 1)
             self.assertEqual(json.loads(obs_state_path.read_text(encoding="utf-8"))["observation.state"], cached_state)
+
+    def test_missing_obs_state_cache_stops_before_remote_policy_reset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            remote_policy = FakeRemotePolicy()
+
+            self.run_client_until_prompt(fake_cfg(task="explicit task"), remote_policy, obs_state_path)
+
+            self.assertEqual(remote_policy.reset_count, 0)
 
     def test_invalid_obs_state_cache_stops_before_remote_policy_reset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             obs_state_path = Path(temp_dir) / "obs_state.json"
             obs_state_path.write_text(json.dumps({"observation.state": [1.0, 2.0]}), encoding="utf-8")
-            dataset = FakeDataset({"task": "dataset task", "observation.state": np.arange(14, dtype=np.float32)})
             remote_policy = FakeRemotePolicy()
 
-            self.run_client_until_prompt(fake_cfg(task="explicit task"), dataset, remote_policy, obs_state_path)
+            self.run_client_until_prompt(fake_cfg(task="explicit task"), remote_policy, obs_state_path)
 
-            self.assertEqual(dataset.read_count, 0)
             self.assertEqual(remote_policy.reset_count, 0)
+
+    def test_blank_task_stops_before_remote_policy_reset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            obs_state_path.write_text(
+                json.dumps({"observation.state": [float(value) for value in range(14)]}), encoding="utf-8"
+            )
+            remote_policy = FakeRemotePolicy()
+
+            self.run_client_until_prompt(fake_cfg(task=""), remote_policy, obs_state_path)
+
+            self.assertEqual(remote_policy.reset_count, 0)
+
+    def test_eval_main_does_not_construct_lerobot_dataset(self):
+        cfg = EvalRealConfig(repo_id="", task="explicit task")
+        remote_policy = FakeRemotePolicy()
+
+        with patch.object(eval_g1_client, "LeRobotDataset", side_effect=AssertionError("dataset should not load"), create=True), patch.object(
+            eval_g1_client, "RemotePolicy", return_value=remote_policy
+        ), patch.object(eval_g1_client, "eval_policy_client") as eval_policy_client:
+            eval_g1_client.eval_main.__wrapped__(cfg)
+
+        eval_policy_client.assert_called_once_with(cfg, remote_policy)
 
 
 if __name__ == "__main__":

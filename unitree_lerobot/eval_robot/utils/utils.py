@@ -114,7 +114,7 @@ def to_scalar(x):
 
 @dataclass
 class EvalRealConfig:
-    repo_id: str
+    repo_id: str = ""
     policy: PreTrainedConfig | None = None
 
     root: str = ""
