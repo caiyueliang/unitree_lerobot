@@ -24,6 +24,11 @@ from unitree_lerobot.eval_robot.make_robot import (
     setup_image_client,
     setup_robot_interface,
 )
+from unitree_lerobot.eval_robot.robot_control.robot_arm import (
+    INIT_STATE_PATH,
+    _load_initial_arm_q_target,
+    initialize_robot_to_starting_pose,
+)
 from unitree_lerobot.eval_robot.utils.rerun_visualizer import RerunLogger, visualization_data
 from unitree_lerobot.eval_robot.utils.utils import EvalRealConfig, to_list, to_scalar
 
@@ -69,16 +74,6 @@ def _write_ee_action(ee_shared_mem, left_ee_action: np.ndarray, right_ee_action:
         ee_shared_mem["right"].value = to_scalar(right_ee_action)
 
 
-def initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, send_real_robot, wait_s=1.0):
-    logger_mp.info("Initializing robot to starting pose...")
-    if send_real_robot:
-        tau = arm_ik.solve_tau(init_arm_pose)
-        arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
-        time.sleep(wait_s)
-    else:
-        logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
-
-
 def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
     """Collect live observations, request actions from the remote VLA service, and execute them."""
     logger_mp.info(f"Arguments: {cfg}")
@@ -98,6 +93,11 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         rerun_logger = RerunLogger()
 
     image_client = None
+    arm_ctrl = None
+    arm_ik = None
+    arm_dof = None
+    init_arm_pose = None
+    should_restore_robot = False
     try:
         image_client, image_config = setup_image_client(cfg)
         robot_interface = setup_robot_interface(cfg)
@@ -117,9 +117,6 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
 
-        # 机器人移动到初始位置
-        # initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
-
         # 输入's'机器人才会开始运动
         user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
         idx = 0
@@ -129,6 +126,7 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
             return
 
         # 机器人移动到初始位置
+        should_restore_robot = True
         initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
@@ -188,6 +186,14 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
     except Exception as e:
         logger_mp.info(f"An error occurred: {e}")
     finally:
+        if should_restore_robot and arm_ctrl is not None and arm_ik is not None and init_arm_pose is not None:
+            try:
+                logger_mp.info("Restoring robot arm to initial poses...")
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
+                init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=1.0)
+            except Exception as restore_error:
+                logger_mp.info(f"An error occurred while restoring robot arm: {restore_error}")
         if image_client is not None:
             image_client.close()
 

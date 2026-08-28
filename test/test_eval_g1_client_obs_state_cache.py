@@ -171,6 +171,76 @@ class ObsStateCacheTest(unittest.TestCase):
             self.assertEqual(remote_policy.action_count, 2)
             self.assertTrue(image_client.closed)
 
+    def test_restores_from_obs_state_to_init_state_after_max_steps(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            init_state_path = Path(temp_dir) / "init_state.json"
+            obs_pose = np.arange(14, dtype=np.float32) + 10
+            init_pose = np.arange(14, dtype=np.float32)
+            obs_state_path.write_text(json.dumps({"observation.state": obs_pose.tolist()}), encoding="utf-8")
+            init_state_path.write_text(json.dumps({"observation.state": init_pose.tolist()}), encoding="utf-8")
+            remote_policy = FakeRemotePolicy()
+
+            image_client = FakeImageClient()
+            with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
+                eval_g1_client, "INIT_STATE_PATH", init_state_path, create=True
+            ), patch.object(eval_g1_client, "setup_image_client", return_value=(image_client, {})), patch.object(
+                eval_g1_client, "setup_robot_interface", return_value=fake_robot_interface()
+            ), patch(
+                "builtins.input", return_value="s"
+            ), patch.object(
+                eval_g1_client,
+                "process_images_and_observations",
+                return_value=({}, np.zeros(14, dtype=np.float32)),
+            ), patch.object(
+                eval_g1_client, "initialize_robot_to_starting_pose"
+            ) as move_to_pose, patch.object(
+                eval_g1_client.time, "sleep"
+            ):
+                eval_g1_client.eval_policy_client(fake_cfg(task="explicit task", max_steps=1), remote_policy)
+
+            np.testing.assert_array_equal(move_to_pose.call_args_list[0].args[2], obs_pose)
+            np.testing.assert_array_equal(move_to_pose.call_args_list[1].args[2], obs_pose)
+            np.testing.assert_array_equal(move_to_pose.call_args_list[2].args[2], init_pose)
+            self.assertEqual(
+                [call_args.args[3] for call_args in move_to_pose.call_args_list],
+                [False, False, False],
+            )
+            self.assertTrue(image_client.closed)
+
+    def test_restores_from_obs_state_to_init_state_after_loop_exception(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            init_state_path = Path(temp_dir) / "init_state.json"
+            obs_pose = np.arange(14, dtype=np.float32) + 10
+            init_pose = np.arange(14, dtype=np.float32)
+            obs_state_path.write_text(json.dumps({"observation.state": obs_pose.tolist()}), encoding="utf-8")
+            init_state_path.write_text(json.dumps({"observation.state": init_pose.tolist()}), encoding="utf-8")
+            remote_policy = FakeRemotePolicy()
+
+            image_client = FakeImageClient()
+            with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
+                eval_g1_client, "INIT_STATE_PATH", init_state_path, create=True
+            ), patch.object(eval_g1_client, "setup_image_client", return_value=(image_client, {})), patch.object(
+                eval_g1_client, "setup_robot_interface", return_value=fake_robot_interface()
+            ), patch(
+                "builtins.input", return_value="s"
+            ), patch.object(
+                eval_g1_client,
+                "process_images_and_observations",
+                side_effect=RuntimeError("loop boom"),
+            ), patch.object(
+                eval_g1_client, "initialize_robot_to_starting_pose"
+            ) as move_to_pose, patch.object(
+                eval_g1_client.time, "sleep"
+            ):
+                eval_g1_client.eval_policy_client(fake_cfg(task="explicit task", max_steps=1), remote_policy)
+
+            np.testing.assert_array_equal(move_to_pose.call_args_list[0].args[2], obs_pose)
+            np.testing.assert_array_equal(move_to_pose.call_args_list[1].args[2], obs_pose)
+            np.testing.assert_array_equal(move_to_pose.call_args_list[2].args[2], init_pose)
+            self.assertTrue(image_client.closed)
+
 
 if __name__ == "__main__":
     unittest.main()

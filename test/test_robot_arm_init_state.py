@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -33,6 +34,20 @@ class InitStateTest(unittest.TestCase):
 
             with self.assertRaisesRegex(FileNotFoundError, "init_state.json"):
                 robot_arm._load_initial_arm_q_target(14, path)
+
+    def test_initialize_robot_to_starting_pose_sends_pose_with_tau(self):
+        arm_ctrl = Mock()
+        arm_ik = Mock()
+        pose = np.arange(14, dtype=np.float32)
+        tau = np.arange(14, dtype=np.float32) + 100
+        arm_ik.solve_tau.return_value = tau
+
+        with patch.object(robot_arm.time, "sleep") as sleep:
+            robot_arm.initialize_robot_to_starting_pose(arm_ctrl, arm_ik, pose, send_real_robot=True, wait_s=0.5)
+
+        arm_ik.solve_tau.assert_called_once_with(pose)
+        arm_ctrl.ctrl_dual_arm.assert_called_once_with(pose, tau)
+        sleep.assert_called_once_with(0.5)
 
 
 if __name__ == "__main__":
