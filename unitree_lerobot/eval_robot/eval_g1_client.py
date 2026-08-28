@@ -34,7 +34,7 @@ import logging_mp
 logger_mp = logging_mp.getLogger(__name__)
 logger_mp.setLevel(logging_mp.INFO)
 
-OBS_STATE_PATH = Path("./init_state.json")
+OBS_STATE_PATH = Path("./obs_state.json")
 
 
 def _to_numpy_1d(value):
@@ -146,14 +146,14 @@ def eval_policy_client(cfg: EvalRealConfig, dataset: LeRobotDataset, remote_poli
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
 
-        # 机器人移动到初始位置
-        logger_mp.info("Initializing robot to starting pose...")
-        if cfg.send_real_robot:
-            tau = arm_ik.solve_tau(init_arm_pose)
-            arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
-            time.sleep(1.0)
-        else:
-            logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
+        # # 机器人移动到初始位置
+        # logger_mp.info("Initializing robot to starting pose...")
+        # if cfg.send_real_robot:
+        #     tau = arm_ik.solve_tau(init_arm_pose)
+        #     arm_ctrl.ctrl_dual_arm(init_arm_pose, tau)
+        #     time.sleep(1.0)
+        # else:
+        #     logger_mp.warning("send_real_robot=false：跳过机器人初始姿态运动。")
 
         # 输入's'机器人才会开始运动
         user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")

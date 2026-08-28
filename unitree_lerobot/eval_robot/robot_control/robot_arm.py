@@ -1,7 +1,9 @@
+import json
 import numpy as np
 import threading
 import time
 from enum import IntEnum
+from pathlib import Path
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize  # dds
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ as hg_LowCmd, LowState_ as hg_LowState  # idl for g1, h1_2
@@ -22,10 +24,25 @@ kTopicLowCommand_Debug = "rt/lowcmd"
 kTopicLowCommand_Motion = "rt/arm_sdk"
 kTopicLowState = "rt/lowstate"
 
+INIT_STATE_PATH = Path("./init_state.json")
+
 G1_29_Num_Motors = 35
 G1_23_Num_Motors = 35
 H1_2_Num_Motors = 35
 H1_Num_Motors = 20
+
+
+def _load_initial_arm_q_target(num_joints, path=INIT_STATE_PATH):
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found. Create it with an 'observation.state' list.")
+    with path.open("r", encoding="utf-8") as file:
+        init_state_data = json.load(file)
+    if "observation.state" not in init_state_data:
+        raise ValueError(f"{path} must contain 'observation.state'.")
+    q_target = np.asarray(init_state_data["observation.state"], dtype=np.float32).reshape(-1)
+    if q_target.shape[0] != num_joints:
+        raise ValueError(f"{path} observation.state must contain {num_joints} values, got {q_target.shape[0]}.")
+    return q_target
 
 
 class MotorState:
@@ -71,7 +88,7 @@ class DataBuffer:
 class G1_29_ArmController:
     def __init__(self, motion_mode=False, simulation_mode=False):
         logger_mp.info("Initialize G1_29_ArmController...")
-        self.q_target = np.zeros(14)
+        self.q_target = _load_initial_arm_q_target(14)
         self.tauff_target = np.zeros(14)
         self.motion_mode = motion_mode
         self.simulation_mode = simulation_mode
