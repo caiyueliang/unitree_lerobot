@@ -242,7 +242,9 @@ class ObsStateCacheTest(unittest.TestCase):
                 eval_g1_client, "initialize_robot_to_starting_pose"
             ), patch.object(
                 eval_g1_client.time, "sleep"
-            ):
+            ), patch.object(
+                eval_g1_client.logger_mp, "info"
+            ) as log_info:
                 cfg = fake_cfg(task="explicit task", max_steps=3)
                 cfg.send_real_robot = True
                 eval_g1_client.eval_policy_client(cfg, remote_policy)
@@ -256,6 +258,24 @@ class ObsStateCacheTest(unittest.TestCase):
             ]
             for actual, expected in zip(actual_actions, expected_actions, strict=True):
                 np.testing.assert_array_equal(actual, expected)
+            action_sequence_logs = [
+                call_args
+                for call_args in log_info.call_args_list
+                if call_args.args and "Remote action sequence" in call_args.args[0]
+            ]
+            self.assertEqual(len(action_sequence_logs), 1)
+            self.assertEqual(action_sequence_logs[0].args[1], (3, 16))
+            np.testing.assert_array_equal(
+                action_sequence_logs[0].args[2],
+                np.array(
+                    [
+                        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 0],
+                        [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 0, 0],
+                        [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 0, 0],
+                    ],
+                    dtype=np.float32,
+                ),
+            )
 
     def test_restores_from_obs_state_to_init_state_after_max_steps(self):
         with tempfile.TemporaryDirectory() as temp_dir:

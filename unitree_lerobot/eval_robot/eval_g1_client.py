@@ -177,6 +177,11 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
                         np.array2string(current_arm_q, precision=4, suppress_small=True),
                         np.array2string(arm_action, precision=4, suppress_small=True),
                     )
+                    logger_mp.info(
+                        "Remote action sequence shape=%s action_sequence=\n%s",
+                        robot_action.action_sequence.shape,
+                        robot_action.action_sequence,
+                    )
 
                 if cfg.send_real_robot:
                     tau = arm_ik.solve_tau(arm_action)
