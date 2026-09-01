@@ -169,16 +169,15 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
                 if idx % 30 == 0:
                     max_arm_delta = float(np.max(np.abs(arm_action - current_arm_q)))
                     logger_mp.info(
-                        "Remote action frame %d chunk[%d/%d]: max_arm_delta=%.5f, current_arm_q=%s, arm_action=%s",
+                        "Remote action frame %d chunk[%d/%d]: max_arm_delta=%.5f, current_arm_q=%s",
                         idx,
                         chunk_idx + 1,
                         robot_action.action_sequence.shape[0],
                         max_arm_delta,
                         np.array2string(current_arm_q, precision=4, suppress_small=True),
-                        np.array2string(arm_action, precision=4, suppress_small=True),
                     )
                     logger_mp.info(
-                        "Remote action sequence shape=%s action_sequence=\n%s",
+                        "action sequence shape=%s action_sequence=\n%s",
                         robot_action.action_sequence.shape,
                         robot_action.action_sequence,
                     )
