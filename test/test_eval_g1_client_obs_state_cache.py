@@ -146,6 +146,26 @@ class ObsStateCacheTest(unittest.TestCase):
 
         self.assertEqual(cfg.max_steps, 60 * 30)
 
+    def test_metadata_observation_keys_use_obs_delta_indices_without_data_keys(self):
+        metadata = {
+            "control_space": "joint",
+            "obs_delta_indices": {
+                "observation.language": [0],
+                "observation.images.cam_left_high": [0],
+                "observation.state.left_arm": [0],
+            },
+            "action_chunk_size": 1,
+        }
+
+        self.assertEqual(
+            eval_g1_client._metadata_observation_keys(metadata),
+            [
+                "observation.language",
+                "observation.images.cam_left_high",
+                "observation.state.left_arm",
+            ],
+        )
+
     def test_remote_eval_loop_stops_after_configured_max_steps(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             obs_state_path = Path(temp_dir) / "obs_state.json"

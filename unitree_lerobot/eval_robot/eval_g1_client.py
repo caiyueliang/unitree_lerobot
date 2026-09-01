@@ -74,17 +74,26 @@ def _write_ee_action(ee_shared_mem, left_ee_action: np.ndarray, right_ee_action:
         ee_shared_mem["right"].value = to_scalar(right_ee_action)
 
 
+def _metadata_observation_keys(metadata: dict) -> list[str]:
+    data_keys = metadata.get("data_keys")
+    if data_keys:
+        return list(data_keys)
+    return list(metadata.get("obs_delta_indices", {}))
+
+
 def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
     """Collect live observations, request actions from the remote VLA service, and execute them."""
     logger_mp.info(f"Arguments: {cfg}")
     metadata = remote_policy.metadata
     control_space = metadata.get("control_space", "")
     expected_token = os.environ.get("UNIBOT_SUBMISSION_TOKEN")
+    observation_keys = _metadata_observation_keys(metadata)
 
     logger_mp.info(
-        "Remote policy metadata: control_space=%s, data_keys=%s, obs_chunk_size=%s, action_chunk_size=%s",
+        "Remote policy metadata: control_space=%s, observation_keys=%s, obs_delta_indices=%s, obs_chunk_size=%s, action_chunk_size=%s",
         control_space,
-        metadata.get("data_keys"),
+        observation_keys,
+        metadata.get("obs_delta_indices"),
         metadata.get("obs_chunk_size"),
         metadata.get("action_chunk_size"),
     )
