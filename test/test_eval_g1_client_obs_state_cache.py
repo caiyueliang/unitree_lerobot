@@ -191,6 +191,72 @@ class ObsStateCacheTest(unittest.TestCase):
             self.assertEqual(remote_policy.action_count, 2)
             self.assertTrue(image_client.closed)
 
+    def test_remote_eval_loop_executes_all_remote_action_chunk_frames(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            obs_state_path = Path(temp_dir) / "obs_state.json"
+            obs_state_path.write_text(
+                json.dumps({"observation.state": [float(value) for value in range(14)]}), encoding="utf-8"
+            )
+            remote_policy = FakeRemotePolicy()
+            remote_policy.get_action = Mock(
+                return_value={
+                    "action.left_arm": np.array(
+                        [
+                            [1, 2, 3, 4, 5, 6, 7],
+                            [11, 12, 13, 14, 15, 16, 17],
+                            [21, 22, 23, 24, 25, 26, 27],
+                        ],
+                        dtype=np.float32,
+                    ),
+                    "action.right_arm": np.array(
+                        [
+                            [8, 9, 10, 11, 12, 13, 14],
+                            [18, 19, 20, 21, 22, 23, 24],
+                            [28, 29, 30, 31, 32, 33, 34],
+                        ],
+                        dtype=np.float32,
+                    ),
+                    "action.left_gripper": np.zeros((3, 1), dtype=np.float32),
+                    "action.right_gripper": np.zeros((3, 1), dtype=np.float32),
+                }
+            )
+            arm_ctrl = Mock()
+            arm_ik = Mock()
+            arm_ik.solve_tau.return_value = np.zeros(14, dtype=np.float32)
+            robot_interface = {
+                "arm_ctrl": arm_ctrl,
+                "arm_ik": arm_ik,
+                "ee_shared_mem": {},
+                "arm_dof": 14,
+                "ee_dof": 0,
+            }
+            image_client = FakeImageClient()
+
+            with patch.object(eval_g1_client, "OBS_STATE_PATH", obs_state_path), patch.object(
+                eval_g1_client, "setup_image_client", return_value=(image_client, {})
+            ), patch.object(eval_g1_client, "setup_robot_interface", return_value=robot_interface), patch.object(
+                eval_g1_client,
+                "process_images_and_observations",
+                return_value=({}, np.zeros(14, dtype=np.float32)),
+            ), patch.object(
+                eval_g1_client, "initialize_robot_to_starting_pose"
+            ), patch.object(
+                eval_g1_client.time, "sleep"
+            ):
+                cfg = fake_cfg(task="explicit task", max_steps=3)
+                cfg.send_real_robot = True
+                eval_g1_client.eval_policy_client(cfg, remote_policy)
+
+            self.assertEqual(remote_policy.get_action.call_count, 1)
+            actual_actions = [call_args.args[0] for call_args in arm_ctrl.ctrl_dual_arm.call_args_list]
+            expected_actions = [
+                np.arange(1, 15, dtype=np.float32),
+                np.arange(11, 25, dtype=np.float32),
+                np.arange(21, 35, dtype=np.float32),
+            ]
+            for actual, expected in zip(actual_actions, expected_actions, strict=True):
+                np.testing.assert_array_equal(actual, expected)
+
     def test_restores_from_obs_state_to_init_state_after_max_steps(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             obs_state_path = Path(temp_dir) / "obs_state.json"

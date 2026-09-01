@@ -9,6 +9,7 @@ class RobotAction:
     arm: np.ndarray
     left_ee: np.ndarray
     right_ee: np.ndarray
+    action_sequence: np.ndarray
 
 
 def _to_numpy(value: Any, dtype: np.dtype | type | None = None) -> np.ndarray:
@@ -89,15 +90,29 @@ def build_remote_observation(
     return remote_obs
 
 
-def _first_action_frame(action: dict[str, Any], key: str, dim: int) -> np.ndarray:
+def _action_frames(action: dict[str, Any], key: str, dim: int) -> np.ndarray:
     if key not in action:
         raise KeyError(f"Missing remote action key {key!r}")
     array = _to_numpy(action[key], np.float32)
     if array.shape == (dim,):
-        return array
+        return array[None, :]
     if array.ndim == 2 and array.shape[1] == dim and array.shape[0] > 0:
-        return array[0]
+        return array
     raise ValueError(f"Remote action {key!r} shape {array.shape} cannot be used as (*, {dim})")
+
+
+def _broadcast_action_frames(*frames: np.ndarray) -> tuple[np.ndarray, ...]:
+    target_frames = max(frame.shape[0] for frame in frames)
+    broadcasted = []
+    for frame in frames:
+        if frame.shape[0] == target_frames:
+            broadcasted.append(frame)
+        elif frame.shape[0] == 1:
+            broadcasted.append(np.repeat(frame, target_frames, axis=0))
+        else:
+            lengths = [item.shape[0] for item in frames]
+            raise ValueError(f"Remote action chunk lengths must match or be 1, got {lengths}")
+    return tuple(broadcasted)
 
 
 def remote_action_to_robot_action(
@@ -113,10 +128,18 @@ def remote_action_to_robot_action(
     if control_space != "joint":
         raise ValueError(f"Unsupported remote control_space {control_space!r}")
 
-    left_arm = _first_action_frame(action, "action.left_arm", 7)
-    right_arm = _first_action_frame(action, "action.right_arm", 7)
+    left_arm, right_arm, left_ee, right_ee = _broadcast_action_frames(
+        _action_frames(action, "action.left_arm", 7),
+        _action_frames(action, "action.right_arm", 7),
+        _action_frames(action, "action.left_gripper", 1),
+        _action_frames(action, "action.right_gripper", 1),
+    )
+    arm = np.concatenate((left_arm, right_arm), axis=1).astype(np.float32, copy=False)
+    left_ee = left_ee.astype(np.float32, copy=False)
+    right_ee = right_ee.astype(np.float32, copy=False)
     return RobotAction(
-        arm=np.concatenate((left_arm, right_arm), axis=0).astype(np.float32, copy=False),
-        left_ee=_first_action_frame(action, "action.left_gripper", 1).astype(np.float32, copy=False),
-        right_ee=_first_action_frame(action, "action.right_gripper", 1).astype(np.float32, copy=False),
+        arm=arm,
+        left_ee=left_ee,
+        right_ee=right_ee,
+        action_sequence=np.concatenate((arm, left_ee, right_ee), axis=1).astype(np.float32, copy=False),
     )

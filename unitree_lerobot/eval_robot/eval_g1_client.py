@@ -139,7 +139,6 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
         while idx < cfg.max_steps:
-            loop_start_time = time.perf_counter()
             observation, current_arm_q = process_images_and_observations(image_client, image_config, arm_ctrl)
             if current_arm_q is None:
                 raise RuntimeError("Failed to read current arm state.")
@@ -161,36 +160,45 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
                 expected_token=expected_token,
             )
 
-            arm_action = robot_action.arm
-            if idx % 30 == 0:
-                max_arm_delta = float(np.max(np.abs(arm_action - current_arm_q)))
-                logger_mp.info(
-                    "Remote action frame %d: max_arm_delta=%.5f, current_arm_q=%s, arm_action=%s",
-                    idx,
-                    max_arm_delta,
-                    np.array2string(current_arm_q, precision=4, suppress_small=True),
-                    np.array2string(arm_action, precision=4, suppress_small=True),
-                )
+            for chunk_idx in range(robot_action.action_sequence.shape[0]):
+                frame_start_time = time.perf_counter()
+                arm_action = robot_action.arm[chunk_idx]
+                left_ee_action = robot_action.left_ee[chunk_idx]
+                right_ee_action = robot_action.right_ee[chunk_idx]
 
-            if cfg.send_real_robot:
-                tau = arm_ik.solve_tau(arm_action)
-                arm_ctrl.ctrl_dual_arm(arm_action, tau)
-
-            if cfg.ee and cfg.send_real_robot:
-                if robot_action.left_ee.shape[0] != ee_dof or robot_action.right_ee.shape[0] != ee_dof:
-                    raise ValueError(
-                        f"Remote gripper action dim mismatch: left={robot_action.left_ee.shape}, "
-                        f"right={robot_action.right_ee.shape}, ee_dof={ee_dof}"
+                if idx % 30 == 0:
+                    max_arm_delta = float(np.max(np.abs(arm_action - current_arm_q)))
+                    logger_mp.info(
+                        "Remote action frame %d chunk[%d/%d]: max_arm_delta=%.5f, current_arm_q=%s, arm_action=%s",
+                        idx,
+                        chunk_idx + 1,
+                        robot_action.action_sequence.shape[0],
+                        max_arm_delta,
+                        np.array2string(current_arm_q, precision=4, suppress_small=True),
+                        np.array2string(arm_action, precision=4, suppress_small=True),
                     )
-                _write_ee_action(ee_shared_mem, robot_action.left_ee, robot_action.right_ee)
 
-            if cfg.visualization:
-                state_tensor = np.concatenate((current_arm_q, left_ee_state, right_ee_state), axis=0)
-                action_np = np.concatenate((arm_action, robot_action.left_ee, robot_action.right_ee), axis=0)
-                visualization_data(idx, observation, state_tensor, action_np, rerun_logger)
+                if cfg.send_real_robot:
+                    tau = arm_ik.solve_tau(arm_action)
+                    arm_ctrl.ctrl_dual_arm(arm_action, tau)
 
-            idx += 1
-            time.sleep(max(0, (1.0 / cfg.frequency) - (time.perf_counter() - loop_start_time)))
+                if cfg.ee and cfg.send_real_robot:
+                    if left_ee_action.shape[0] != ee_dof or right_ee_action.shape[0] != ee_dof:
+                        raise ValueError(
+                            f"Remote gripper action dim mismatch: left={left_ee_action.shape}, "
+                            f"right={right_ee_action.shape}, ee_dof={ee_dof}"
+                        )
+                    _write_ee_action(ee_shared_mem, left_ee_action, right_ee_action)
+
+                if cfg.visualization:
+                    state_tensor = np.concatenate((current_arm_q, left_ee_state, right_ee_state), axis=0)
+                    action_np = robot_action.action_sequence[chunk_idx]
+                    visualization_data(idx, observation, state_tensor, action_np, rerun_logger)
+
+                idx += 1
+                if idx >= cfg.max_steps:
+                    break
+                time.sleep(max(0, (1.0 / cfg.frequency) - (time.perf_counter() - frame_start_time)))
     except Exception as e:
         logger_mp.info(f"An error occurred: {e}")
     finally:

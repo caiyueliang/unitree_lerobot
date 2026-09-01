@@ -92,7 +92,7 @@ def test_build_remote_observation_uses_obs_delta_indices_when_data_keys_missing(
     np.testing.assert_array_equal(remote_obs["observation.images.cam_right_wrist"], (image + 2).numpy()[None, ...])
 
 
-def test_remote_action_to_robot_action_uses_first_joint_chunk_frame():
+def test_remote_action_to_robot_action_preserves_joint_chunk_frames():
     action = {
         "meta.token": "123456",
         "action.left_arm": np.array([[1, 2, 3, 4, 5, 6, 7], [10, 20, 30, 40, 50, 60, 70]], dtype=np.float32),
@@ -104,9 +104,28 @@ def test_remote_action_to_robot_action_uses_first_joint_chunk_frame():
 
     robot_action = remote_action_to_robot_action(action, control_space="joint", expected_token="123456")
 
-    np.testing.assert_array_equal(robot_action.arm, np.arange(1, 15, dtype=np.float32))
-    np.testing.assert_array_equal(robot_action.left_ee, np.array([0.2], dtype=np.float32))
-    np.testing.assert_array_equal(robot_action.right_ee, np.array([0.8], dtype=np.float32))
+    np.testing.assert_array_equal(
+        robot_action.arm,
+        np.array(
+            [
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+                [10, 20, 30, 40, 50, 60, 70, 8, 9, 10, 11, 12, 13, 14],
+            ],
+            dtype=np.float32,
+        ),
+    )
+    np.testing.assert_array_equal(robot_action.left_ee, np.array([[0.2], [0.4]], dtype=np.float32))
+    np.testing.assert_array_equal(robot_action.right_ee, np.array([[0.8], [0.8]], dtype=np.float32))
+    np.testing.assert_array_equal(
+        robot_action.action_sequence,
+        np.array(
+            [
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0.2, 0.8],
+                [10, 20, 30, 40, 50, 60, 70, 8, 9, 10, 11, 12, 13, 14, 0.4, 0.8],
+            ],
+            dtype=np.float32,
+        ),
+    )
 
 
 def test_remote_action_to_robot_action_rejects_ee_control_space():
