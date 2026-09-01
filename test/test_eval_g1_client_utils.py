@@ -56,6 +56,42 @@ def test_build_remote_observation_uses_latest_robot_state_and_repeats_chunk():
     assert remote_obs["observation.state.left_gripper"].shape == (2, 1)
 
 
+def test_build_remote_observation_uses_obs_delta_indices_when_data_keys_missing():
+    image = torch.arange(2 * 3 * 3, dtype=torch.uint8).reshape(2, 3, 3)
+    observation = {
+        "observation.images.cam_left_high": image,
+        "observation.images.cam_left_wrist": image + 1,
+        "observation.images.cam_right_wrist": image + 2,
+    }
+    current_arm_q = np.arange(14, dtype=np.float32)
+    metadata = {
+        "obs_delta_indices": {
+            "observation.language": [0],
+            "observation.images.cam_left_high": [0],
+            "observation.images.cam_left_wrist": [0],
+            "observation.images.cam_right_wrist": [0],
+            "observation.state.left_arm": [0],
+            "observation.state.right_arm": [0],
+            "observation.state.left_gripper": [0],
+            "observation.state.right_gripper": [0],
+        },
+    }
+
+    remote_obs = build_remote_observation(
+        observation,
+        current_arm_q,
+        np.array([0.25], dtype=np.float32),
+        np.array([0.75], dtype=np.float32),
+        task="place tubes",
+        metadata=metadata,
+    )
+
+    assert set(remote_obs) == set(metadata["obs_delta_indices"])
+    np.testing.assert_array_equal(remote_obs["observation.images.cam_left_high"], image.numpy()[None, ...])
+    np.testing.assert_array_equal(remote_obs["observation.images.cam_left_wrist"], (image + 1).numpy()[None, ...])
+    np.testing.assert_array_equal(remote_obs["observation.images.cam_right_wrist"], (image + 2).numpy()[None, ...])
+
+
 def test_remote_action_to_robot_action_uses_first_joint_chunk_frame():
     action = {
         "meta.token": "123456",

@@ -32,6 +32,16 @@ def _state_chunk(frame: Any, dim: int, chunk_size: int) -> np.ndarray:
     return _repeat_chunk(array, chunk_size, np.float32)
 
 
+def _observation_key_chunks(metadata: dict[str, Any]) -> list[tuple[str, int]]:
+    data_keys = list(metadata.get("data_keys", []))
+    if data_keys:
+        chunk_size = int(metadata.get("obs_chunk_size", 1))
+        return [(key, chunk_size) for key in data_keys]
+
+    obs_delta_indices = metadata.get("obs_delta_indices", {})
+    return [(key, len(offsets)) for key, offsets in obs_delta_indices.items()]
+
+
 def build_remote_observation(
     observation: dict[str, Any],
     current_arm_q: np.ndarray,
@@ -40,8 +50,6 @@ def build_remote_observation(
     task: str,
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    obs_chunk_size = int(metadata.get("obs_chunk_size", 1))
-    data_keys = list(metadata.get("data_keys", []))
     current_arm_q = _to_numpy(current_arm_q, np.float32).reshape(-1)
     if current_arm_q.shape[0] < 14:
         raise ValueError(f"Expected current_arm_q with at least 14 values, got shape {current_arm_q.shape}")
@@ -58,24 +66,24 @@ def build_remote_observation(
     }
 
     remote_obs: dict[str, Any] = {}
-    for key in data_keys:
+    for key, chunk_size in _observation_key_chunks(metadata):
         if key == "observation.language":
             remote_obs[key] = source_values[key]
         elif key.startswith("observation.images."):
             if key not in observation or observation[key] is None:
                 raise KeyError(f"Missing image observation {key!r}")
-            remote_obs[key] = _repeat_chunk(observation[key], obs_chunk_size, np.uint8)
+            remote_obs[key] = _repeat_chunk(observation[key], chunk_size, np.uint8)
         elif key in ("observation.state.left_arm", "observation.state.right_arm"):
-            remote_obs[key] = _state_chunk(source_values[key], 7, obs_chunk_size)
+            remote_obs[key] = _state_chunk(source_values[key], 7, chunk_size)
         elif key in ("observation.state.left_gripper", "observation.state.right_gripper"):
-            remote_obs[key] = _state_chunk(source_values[key], 1, obs_chunk_size)
+            remote_obs[key] = _state_chunk(source_values[key], 1, chunk_size)
         elif key == "observation.state.lower_body":
-            remote_obs[key] = _state_chunk(source_values[key], 15, obs_chunk_size)
+            remote_obs[key] = _state_chunk(source_values[key], 15, chunk_size)
         elif key in (
             "observation.state.left_ee_pose_gripper_base",
             "observation.state.right_ee_pose_gripper_base",
         ):
-            remote_obs[key] = _state_chunk(source_values[key], 6, obs_chunk_size)
+            remote_obs[key] = _state_chunk(source_values[key], 6, chunk_size)
         else:
             raise KeyError(f"Unsupported remote observation key {key!r}")
     return remote_obs
