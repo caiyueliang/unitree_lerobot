@@ -135,7 +135,7 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         #     return
 
         # 机器人移动到初始位置
-        initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
+        initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=3.0)
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
         while idx < cfg.max_steps:
@@ -209,9 +209,9 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         if should_restore_robot and arm_ctrl is not None and arm_ik is not None and init_arm_pose is not None:
             try:
                 logger_mp.info("Restoring robot arm to initial poses...")
-                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=1.0)
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=2.0)
                 init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
-                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=1.0)
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=2.0)
             except Exception as restore_error:
                 logger_mp.info(f"An error occurred while restoring robot arm: {restore_error}")
         if image_client is not None:
