@@ -137,6 +137,11 @@ def remote_action_to_robot_action(
     arm = np.concatenate((left_arm, right_arm), axis=1).astype(np.float32, copy=False)
     left_ee = left_ee.astype(np.float32, copy=False)
     right_ee = right_ee.astype(np.float32, copy=False)
+
+    # action_sequence 的前 14 维与 observation.state 的双臂关节顺序一致：
+    # 0-6 左臂：shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw
+    # 7-13 右臂：shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw
+    # 14 左夹爪，15 右夹爪。
     return RobotAction(
         arm=arm,
         left_ee=left_ee,

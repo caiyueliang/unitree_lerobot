@@ -39,6 +39,22 @@ logger_mp.setLevel(logging_mp.INFO)
 
 OBS_STATE_PATH = Path("./obs_state.json")
 
+# obs_state.json 中 observation.state 的前 14 维是 G1_29 双臂关节角，顺序如下：
+# 0  left_shoulder_pitch   左肩前后摆，主要控制左大臂前后
+# 1  left_shoulder_roll    左肩左右展开/内收
+# 2  left_shoulder_yaw     左肩水平旋转
+# 3  left_elbow            左肘弯折，主要控制左小臂抬起/下垂
+# 4  left_wrist_roll       左腕翻滚
+# 5  left_wrist_pitch      左腕俯仰，主要调整左夹爪上下朝向
+# 6  left_wrist_yaw        左腕偏航
+# 7  right_shoulder_pitch  右肩前后摆，主要控制右大臂前后
+# 8  right_shoulder_roll   右肩左右展开/内收
+# 9  right_shoulder_yaw    右肩水平旋转
+# 10 right_elbow           右肘弯折，主要控制右小臂抬起/下垂
+# 11 right_wrist_roll      右腕翻滚
+# 12 right_wrist_pitch     右腕俯仰，主要调整右夹爪上下朝向
+# 13 right_wrist_yaw       右腕偏航
+
 
 def _load_initial_arm_pose(arm_dof: int, path: Path = OBS_STATE_PATH) -> np.ndarray:
     if not path.exists():
