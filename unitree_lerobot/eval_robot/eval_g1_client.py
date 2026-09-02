@@ -143,15 +143,17 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         reset_reply = remote_policy.reset()
         logger_mp.info("remote_policy.reset() -> %s", reset_reply)
 
+        # 机器人移动到初始位置
+        initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=3.0)
+        
         # # 输入's'机器人才会开始运动
         # user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
         # print(f"user_input: {user_input}")
         # if user_input.lower() != "s":
         #     logger_mp.info("User did not start evaluation.")
+        #     init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
+        #     initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=3.0)
         #     return
-
-        # 机器人移动到初始位置
-        initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=3.0)
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
         while idx < cfg.max_steps:
@@ -225,9 +227,9 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         if should_restore_robot and arm_ctrl is not None and arm_ik is not None and init_arm_pose is not None:
             try:
                 logger_mp.info("Restoring robot arm to initial poses...")
-                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=2.0)
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=3.0)
                 init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
-                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=2.0)
+                initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=3.0)
             except Exception as restore_error:
                 logger_mp.info(f"An error occurred while restoring robot arm: {restore_error}")
         if image_client is not None:

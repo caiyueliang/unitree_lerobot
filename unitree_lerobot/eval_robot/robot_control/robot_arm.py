@@ -45,7 +45,7 @@ def _load_initial_arm_q_target(num_joints, path=INIT_STATE_PATH):
     return q_target
 
 
-def initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, send_real_robot, wait_s=1.0):
+def initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, send_real_robot, wait_s=3.0):
     logger_mp.info("Initializing robot to starting pose...")
     if send_real_robot:
         tau = arm_ik.solve_tau(init_arm_pose)
