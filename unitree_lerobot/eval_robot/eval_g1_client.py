@@ -146,14 +146,14 @@ def eval_policy_client(cfg: EvalRealConfig, remote_policy: RemotePolicy):
         # 机器人移动到初始位置
         initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_arm_pose, cfg.send_real_robot, wait_s=3.0)
         
-        # 输入's'机器人才会开始运动
-        user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
-        print(f"user_input: {user_input}")
-        if user_input.lower() != "s":
-            logger_mp.info("User did not start evaluation.")
-            init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
-            initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=3.0)
-            return
+        # # 输入's'机器人才会开始运动
+        # user_input = input("Enter 's' to initialize the robot and start the remote evaluation: ")
+        # print(f"user_input: {user_input}")
+        # if user_input.lower() != "s":
+        #     logger_mp.info("User did not start evaluation.")
+        #     init_state_pose = _load_initial_arm_q_target(arm_dof, INIT_STATE_PATH)
+        #     initialize_robot_to_starting_pose(arm_ctrl, arm_ik, init_state_pose, cfg.send_real_robot, wait_s=3.0)
+        #     return
 
         logger_mp.info(f"Starting remote evaluation loop at {cfg.frequency} Hz.")
         while idx < cfg.max_steps:
